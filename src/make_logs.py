@@ -1,16 +1,24 @@
 """
 make_logs.py - Synthetic Form ML-7 mileage-log generator with ground truth.
 
-Part 1: random but valid trip data, handwritten EMNIST *test-split* characters
-placed into the printed boxes of Form ML-7, saved as a clean scan (PNG) plus a
-ground-truth JSON file for every log.
+Random but valid trip data, handwritten EMNIST *test-split* characters placed
+into the printed boxes of Form ML-7, and a ground-truth JSON file for every log.
+
+Three image-quality levels (--quality):
+  clean   - flat scan, neat writer
+  medium  - mild phone-photo effects, average writer, some writing over box lines
+  phone   - skewed phone photo (uneven light, shadow, coffee ring, blur, JPEG),
+            messy writer, frequent writing over box lines / touching digits
+The same --seed gives the SAME trip data at every quality level, so accuracy can
+be compared across conditions on identical content.
 
 The form layout (page size, box size, box positions) follows Form ML-7 as shown
 in the project brief, so our reading pipeline is built against the same form the
 instructor will bring to the demo.
 
 Run:
-    python src/make_logs.py --n 5 --out data/synthetic/clean
+    python src/make_logs.py --n 20 --quality clean
+    python src/make_logs.py --n 20 --quality phone
 """
 import argparse
 import datetime as dt
@@ -26,6 +34,17 @@ NPZ_PATH = "data/emnist36.npz"           # produced by src/emnist_loader.py
 RATE_PER_MILE = 0.62
 LETTERS = EMNIST_MAP[10:36]
 DIGITS = EMNIST_MAP[:10]
+
+# Image-quality presets.
+#   messy       - handwriting jitter (size, rotation, position), 0..1
+#   strength    - phone-photo degradation, 0 = flat scan, 1 = car-seat phone photo
+#   hazard_rate - chance that a log contains writing over box lines / touching digits
+#   ink         - pen colour (RGB)
+QUALITY = {
+    "clean":  {"messy": 0.10, "strength": 0.0, "hazard_rate": 0.0, "ink": (25, 35, 90)},
+    "medium": {"messy": 0.40, "strength": 0.5, "hazard_rate": 0.3, "ink": (30, 30, 70)},
+    "phone":  {"messy": 0.75, "strength": 1.0, "hazard_rate": 0.7, "ink": (20, 20, 20)},
+}
 
 # Fonts for the printed parts of the form (macOS, Linux, Windows). First one found is used.
 FONT_REGULAR = ["/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -184,11 +203,14 @@ def random_trip_data(rng, slip_rate=0.10):
 
 
 # --------------------------------------------------------------------------- handwriting
-def write_field(form, ink, bank, field, text, rng, messy):
+def write_field(form, ink, bank, field, text, rng, messy, shifts=None):
     """
     Place one handwritten glyph per box. 'messy' (0..1) increases size,
-    rotation and position jitter. Returns the box of every character written.
+    rotation and position jitter. 'shifts' = {char index: (dx, dy)} pushes
+    chosen characters off-centre to simulate writing over the box lines.
+    Returns the box of every character written.
     """
+    shifts = shifts or {}
     boxes = []
     for i, ch in enumerate(text):
         x0, y0, x1, y1 = form.fields[field][i]
@@ -197,8 +219,9 @@ def write_field(form, ink, bank, field, text, rng, messy):
         M = cv2.getRotationMatrix2D((size / 2, size / 2), rng.normal(0, 4 + 6 * messy), 1.0)
         g = np.clip(cv2.warpAffine(g, M, (size, size)), 0, 1)
 
-        cx = (x0 + x1) / 2 + rng.normal(0, 2 + 7 * messy)
-        cy = (y0 + y1) / 2 + rng.normal(0, 2 + 7 * messy)
+        dx, dy = shifts.get(i, (0, 0))
+        cx = (x0 + x1) / 2 + rng.normal(0, 2 + 7 * messy) + dx
+        cy = (y0 + y1) / 2 + rng.normal(0, 2 + 7 * messy) + dy
         px, py = max(0, int(cx - size / 2)), max(0, int(cy - size / 2))
         region = ink[py:py + size, px:px + size]
         ink[py:py + size, px:px + size] = np.maximum(region, g[:region.shape[0], :region.shape[1]])
@@ -206,8 +229,37 @@ def write_field(form, ink, bank, field, text, rng, messy):
     return {"text": text, "boxes": boxes}
 
 
-def render_log(data, bank, rng, messy=0.1, ink_rgb=(25, 35, 90)):
+def pick_hazards(data, rng, hazard_rate):
+    """
+    Decide which odometer fields get segmentation hazards (like Figure 2):
+      overflow - the last two digits spill down/right over the box lines
+      touching - two neighbouring digits crowd into each other across a box border
+    Returns {field name: {"type": ..., "chars": [...], "shifts": {index: (dx, dy)}}}.
+    These are SEGMENTATION problems: slicing by the printed boxes will cut them wrongly.
+    """
+    hazards = {}
+    if rng.random() >= hazard_rate:
+        return hazards
+    n_rows = len(data["rows"])
+    for _ in range(int(rng.integers(1, 3))):                     # 1 or 2 hazards per log
+        field = f"r{int(rng.integers(n_rows))}_{rng.choice(['odo_start', 'odo_end'])}"
+        if field in hazards:
+            continue
+        if rng.random() < 0.5:
+            shifts = {4: (int(rng.integers(8, 15)), int(rng.integers(10, 17))),
+                      5: (int(rng.integers(-8, 2)), int(rng.integers(12, 18)))}
+            hazards[field] = {"type": "overflow", "chars": [4, 5], "shifts": shifts}
+        else:
+            i = int(rng.integers(1, 5))                          # digits i and i+1 touch
+            shifts = {i: (int(rng.integers(15, 21)), int(rng.integers(-5, 6))),
+                      i + 1: (int(rng.integers(-15, -9)), int(rng.integers(-5, 6)))}
+            hazards[field] = {"type": "touching", "chars": [i, i + 1], "shifts": shifts}
+    return hazards
+
+
+def render_log(data, bank, rng, messy=0.1, ink_rgb=(25, 35, 90), hazards=None):
     """Fill an empty form with the trip data. Returns the page image and per-field ground truth."""
+    hazards = hazards or {}
     form = Form()
     ink = np.zeros((form.H, form.W), np.float32)               # 1 = full ink
 
@@ -216,7 +268,9 @@ def render_log(data, bank, rng, messy=0.1, ink_rgb=(25, 35, 90)):
     for r, row in enumerate(data["rows"]):
         for key, name in [("date", "date"), ("client", "client"), ("odo_start", "odo_start"),
                           ("odo_end", "odo_end"), ("miles_written", "miles")]:
-            fields[f"r{r}_{name}"] = write_field(form, ink, bank, f"r{r}_{name}", row[key], rng, messy)
+            field = f"r{r}_{name}"
+            shifts = hazards.get(field, {}).get("shifts")
+            fields[field] = write_field(form, ink, bank, field, row[key], rng, messy, shifts)
     fields["total_miles"] = write_field(form, ink, bank, "total_miles", data["total_written"], rng, messy)
 
     # blend the ink onto the paper
@@ -226,35 +280,106 @@ def render_log(data, bank, rng, messy=0.1, ink_rgb=(25, 35, 90)):
     return Image.fromarray(page.astype(np.uint8)), fields
 
 
+# --------------------------------------------------------------------------- phone photo
+def degrade(img, rng, strength):
+    """
+    Make a flat scan look like a phone photo of a paper form on a car seat.
+    strength 0 = unchanged, 1 = as bad as Figure 2.
+    Returns (image, warp): warp is the 3x3 perspective matrix that maps
+    form coordinates to image coordinates (identity when nothing was warped),
+    so the ground-truth boxes can still be located in the degraded image.
+    """
+    if strength <= 0:
+        return img, np.eye(3)
+    a = np.asarray(img, np.float32)
+    H, W = a.shape[:2]
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+
+    # 1. uneven lighting: brightness falls off in a random direction
+    gx, gy = rng.uniform(-1, 1, 2)
+    light = 1.0 - 0.20 * strength * (gx * (xx / W - 0.5) + gy * (yy / H - 0.5) + 0.5)
+    # 2. shadow band along the left or right edge (a hand or the car door)
+    edge = W * (0.97 if rng.random() < 0.5 else 0.03)
+    light *= 1 - 0.25 * strength * np.exp(-((xx - edge) / (W * 0.06)) ** 2)
+    a *= light[..., None]
+
+    # 3. coffee ring at a random spot (half of the logs)
+    if rng.random() < 0.5:
+        cy, cx = rng.uniform(0.3, 0.8) * H, rng.uniform(0.2, 0.8) * W
+        r = rng.uniform(0.08, 0.14) * H
+        ring = np.exp(-((np.hypot(yy - cy, xx - cx) - r) / 9.0) ** 2) * 0.35 * strength
+        a *= 1 - ring[..., None] * np.array([0.15, 0.35, 0.6], np.float32)
+
+    # 4. camera blur and sensor noise
+    a = cv2.GaussianBlur(a, (0, 0), 0.5 + 0.8 * strength)
+    a += rng.normal(0, 7 * strength, a.shape)
+    a = np.clip(a, 0, 255).astype(np.uint8)
+
+    # 5. perspective skew: each corner moves by a random amount (up to ~3% of the page)
+    j = 0.03 * strength
+    src = np.float32([[0, 0], [W, 0], [W, H], [0, H]])
+    jitter = rng.uniform(0, j, (4, 2)) * np.float32([W, H])
+    dst = np.float32([[jitter[0, 0], jitter[0, 1]],
+                      [W - jitter[1, 0], jitter[1, 1]],
+                      [W - jitter[2, 0], H - jitter[2, 1]],
+                      [jitter[3, 0], H - jitter[3, 1]]])
+    warp = cv2.getPerspectiveTransform(src, dst)
+    a = cv2.warpPerspective(a, warp, (W, H), borderValue=(60, 60, 60))   # dark car seat
+
+    # 6. JPEG compression, as when the photo is emailed
+    quality = int(85 - 45 * strength)
+    ok, enc = cv2.imencode(".jpg", a[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return Image.fromarray(cv2.imdecode(enc, cv2.IMREAD_COLOR)[..., ::-1]), warp
+
+
 # --------------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description="Generate synthetic Form ML-7 mileage logs.")
     ap.add_argument("--n", type=int, default=5, help="number of logs to generate")
-    ap.add_argument("--out", default="data/synthetic/clean", help="output folder")
-    ap.add_argument("--seed", type=int, default=0, help="random seed (same seed = same logs)")
-    ap.add_argument("--messy", type=float, default=0.1, help="handwriting messiness, 0 to 1")
+    ap.add_argument("--quality", choices=list(QUALITY), default="clean",
+                    help="image-quality level: clean, medium or phone")
+    ap.add_argument("--out", default=None, help="output folder (default: data/synthetic/<quality>)")
+    ap.add_argument("--seed", type=int, default=0, help="random seed (same seed = same trip data)")
     ap.add_argument("--slip-rate", type=float, default=0.10,
                     help="share of logs with one clinician arithmetic slip")
     args = ap.parse_args()
 
-    os.makedirs(args.out, exist_ok=True)
-    rng = np.random.default_rng(args.seed)
+    preset = QUALITY[args.quality]
+    out = args.out or os.path.join("data", "synthetic", args.quality)
+    os.makedirs(out, exist_ok=True)
+
+    # Two separate random streams: one for the trip data, one for how it is drawn.
+    # This keeps the trip data identical across quality levels for the same seed.
+    data_rng = np.random.default_rng(args.seed)
+    draw_rng = np.random.default_rng(args.seed + 10_000)
     bank = GlyphBank()
 
     for i in range(1, args.n + 1):
-        data = random_trip_data(rng, args.slip_rate)
-        img, fields = render_log(data, bank, rng, messy=args.messy)
-        name = f"log_{i:04d}"
-        img.save(os.path.join(args.out, name + ".png"))
-        truth = {**data, "fields": fields,
-                 "conditions": {"quality": "clean_scan", "messy": args.messy, "seed": args.seed}}
-        with open(os.path.join(args.out, name + ".json"), "w") as fh:
-            json.dump(truth, fh, indent=1)
-        slip = " (contains clinician slip)" if any(r["clinician_error"] for r in data["rows"]) else ""
-        print(f"{name}: {data['employee_id']}, {len(data['rows'])} rows, "
-              f"total {data['total_written']}{slip}")
+        data = random_trip_data(data_rng, args.slip_rate)
+        hazards = pick_hazards(data, draw_rng, preset["hazard_rate"])
+        img, fields = render_log(data, bank, draw_rng, preset["messy"], preset["ink"], hazards)
+        img, warp = degrade(img, draw_rng, preset["strength"])
 
-    print(f"Saved {args.n} logs to {args.out}")
+        name = f"log_{i:04d}"
+        ext = ".png" if preset["strength"] == 0 else ".jpg"     # phone photos arrive as JPEG
+        img.save(os.path.join(out, name + ext), quality=95)
+        truth = {**data,
+                 "fields": fields,                              # boxes are in flat-form coordinates
+                 "hazards": {f: {"type": h["type"], "chars": h["chars"]} for f, h in hazards.items()},
+                 "warp_matrix": np.round(warp, 6).tolist(),     # form coords -> image coords
+                 "conditions": {"quality": args.quality, **{k: v for k, v in preset.items() if k != "ink"},
+                                "seed": args.seed}}
+        with open(os.path.join(out, name + ".json"), "w") as fh:
+            json.dump(truth, fh, indent=1)
+
+        notes = []
+        if any(r["clinician_error"] for r in data["rows"]):
+            notes.append("clinician slip")
+        notes += [f"{h['type']} in {f}" for f, h in hazards.items()]
+        print(f"{name}{ext}: {data['employee_id']}, {len(data['rows'])} rows, "
+              f"total {data['total_written']}" + (f"  [{'; '.join(notes)}]" if notes else ""))
+
+    print(f"Saved {args.n} logs to {out}  (quality = {args.quality})")
 
 
 if __name__ == "__main__":
