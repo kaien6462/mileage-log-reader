@@ -28,6 +28,17 @@ python src/make_logs.py --n 50 --quality medium
 python src/make_logs.py --n 50 --quality phone
 ```
 
+### Official test set
+
+All accuracy numbers in our reports are measured on this fixed set
+(50 logs per quality level, seed 2026, EMNIST test split only):
+
+```bash
+python src/make_logs.py --n 50 --quality clean  --seed 2026 --out data/test_official/clean
+python src/make_logs.py --n 50 --quality medium --seed 2026 --out data/test_official/medium
+python src/make_logs.py --n 50 --quality phone  --seed 2026 --out data/test_official/phone
+```
+
 Each log is saved as an image plus a JSON file with the correct answer for every field,
 the segmentation hazards in that log, and the image conditions it was made under.
 The same `--seed` gives the same trip data at every quality level.
