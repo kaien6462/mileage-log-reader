@@ -12,6 +12,13 @@ python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+## Run the demo
+
+```bash
+python -m streamlit run app.py
+```
+
+Upload any Form ML-7 photo (or pick a test log in the sidebar) to see each row read, checked, and marked auto-post or needs review.
 
 ## Data pipeline
 
