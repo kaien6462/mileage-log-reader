@@ -16,7 +16,8 @@ from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from read_log import read_log, register, Classifier, FORM  # noqa: E402
-from validate import validate  # noqa: E402
+from validate import validate, reference_from_truth  # noqa: E402
+import json  # noqa: E402
 from demo_utils import overlay_boxes, rows_table, low_confidence, field_stages, to_display  # noqa: E402
 
 st.set_page_config(page_title="Mileage Log Reader", layout="wide")
@@ -64,7 +65,11 @@ else:
 # ------------------------------------------------------------------ 2. read
 with st.spinner("Reading the log…"):
     result = read_log(img, load_classifier())
-    decisions = validate(result)
+    src_path = full_path if path else (os.path.join(APP_DIR, sample) if sample != "(none)" else None)
+    truth_path = os.path.splitext(src_path)[0] + ".json" if src_path else None
+    reference = (reference_from_truth(json.load(open(truth_path)))
+                 if truth_path and os.path.exists(truth_path) else None)
+    decisions = validate(result, reference)
     page = register(img)
 
 n_rows = len(result["rows"])
