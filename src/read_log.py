@@ -63,18 +63,54 @@ def extract_cells(page):
 # --------------------------------------------------------------------------- 4 classify
 class Classifier:
     """
-    PLACEHOLDER for SCRUM-14. The real version loads the trained model(s) and
-    implements predict(). Interface the rest of the pipeline relies on:
+    The trained digit and letter CNNs (SCRUM-14, trained by Tenaj with
+    src/train_classifiers.py), loaded from models/.
 
         predict(images, group) -> (chars, confidences)
-            images : list of 28x28 float32 arrays (normalize_cell output)
-            group  : "digits" or "letters"  (the model may only answer from this group)
-            chars  : list of single characters, e.g. ['0', '4', '8']
-            confidences : list of floats in [0, 1] (e.g. top softmax probability)
+            images : list of 28x28 float32 arrays (normalize_cell output, values 0-1)
+            group  : "digits" or "letters"  (each group has its own model, so a digit
+                     box can never be read as a letter and vice versa)
+            chars  : list of single characters
+            confidences : top softmax probability for each character, 0-1
+
+    If the weight files are missing, every cell is read as '?' with confidence 0,
+    so the demo still opens and shows the problem instead of crashing.
     """
+    MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+    CHARS = {"digits": "0123456789", "letters": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}
+    FILES = {"digits": "digit_model.pt", "letters": "letter_model.pt"}
+
+    def __init__(self, model_dir=None):
+        model_dir = model_dir or self.MODEL_DIR
+        self.models = {}
+        try:
+            import torch
+            from train_classifiers import SmallCNN
+        except ImportError as e:
+            print(f"WARNING: cannot load the classifier ({e}); every cell will read '?'")
+            return
+        self.torch = torch
+        for group, fname in self.FILES.items():
+            path = os.path.join(model_dir, fname)
+            if not os.path.exists(path):
+                print(f"WARNING: {path} not found; {group} will read '?'")
+                continue
+            model = SmallCNN(len(self.CHARS[group]))
+            model.load_state_dict(torch.load(path, map_location="cpu"))
+            model.eval()
+            self.models[group] = model
 
     def predict(self, images, group):
-        return ["?"] * len(images), [0.0] * len(images)
+        if not images:
+            return [], []
+        if group not in self.models:
+            return ["?"] * len(images), [0.0] * len(images)
+        x = self.torch.from_numpy(np.stack(images).astype(np.float32)).unsqueeze(1)  # (N, 1, 28, 28)
+        with self.torch.no_grad():
+            probs = self.torch.softmax(self.models[group](x), dim=1)
+        conf, idx = probs.max(dim=1)
+        chars = self.CHARS[group]
+        return [chars[i] for i in idx.tolist()], conf.tolist()
 
 
 def group_of(field, i):
