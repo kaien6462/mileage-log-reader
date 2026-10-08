@@ -1,9 +1,61 @@
-=== hw_01.jpg   (fit 0.324, printed-form alignment: True)
+=== hw_01.jpg   (fit 0.484, printed-form alignment: True)
+  emp_id         read KW4821   truth KH4821
   r5_client      read POL      truth PDL
-  digits 100.0% (128)  letters 95.0% (20)  empty-read boxes 0  fields 32/33 exactly right
-  row 1: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
-  row 2: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%);
-  row 3: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
-  row 4: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
-  row 5: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
-  row 6: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%);
+  digits 100.0% (128)  letters 90.0% (20)  empty-read boxes 0  fields 31/33 exactly right
+  row 1: needs review log: employee ID KW4821 not on the HR list; log: low confidence in employee ID: box 2 (37%)
+  row 2: needs review log: employee ID KW4821 not on the HR list; log: low confidence in employee ID: box 2 (37%)
+  row 3: needs review log: employee ID KW4821 not on the HR list; log: low confidence in employee ID: box 2 (37%)
+  row 4: needs review log: employee ID KW4821 not on the HR list; log: low confidence in employee ID: box 2 (37%)
+  row 5: needs review log: employee ID KW4821 not on the HR list; log: low confidence in employee ID: box 2 (37%)
+  row 6: needs review log: employee ID KW4821 not on the HR list; log: low confidence in employee ID: box 2 (37%); client POL not on
+
+=== hw_02.jpg   (fit 0.456, printed-form alignment: True)
+  r4_client      read LXZ      truth KXZ
+  digits 100.0% (109)  letters 94.1% (17)  empty-read boxes 0  fields 27/28 exactly right
+  row 1: auto-post    all checks passed
+  row 2: auto-post    all checks passed
+  row 3: auto-post    all checks passed
+  row 4: auto-post    all checks passed
+  row 5: needs review client LXZ not on the schedule for 10/02; low confidence in client: box 1 (76%), box 2 (73%)
+
+=== hw_03.jpg   (fit 0.47, printed-form alignment: True)
+  r0_client      read WQY      truth WQX
+  r3_client      read RTV      truth RTU
+  r5_client      read IBD      truth YBD
+  digits 100.0% (128)  letters 85.0% (20)  empty-read boxes 0  fields 30/33 exactly right
+  row 1: needs review client WQY not on the schedule for 09/14; low confidence in client: box 3 (66%)
+  row 2: needs review miles written 073 but end - start = 23; low confidence in client: box 2 (72%)
+  row 3: auto-post    all checks passed
+  row 4: needs review client RTV not on the schedule for 09/17
+  row 5: auto-post    all checks passed
+  row 6: needs review client IBD not on the schedule for 09/19; low confidence in client: box 1 (45%), box 3 (79%)
+
+=== hw_04.jpg   (fit 0.489, printed-form alignment: True)
+  digits 100.0% (147)  letters 100.0% (23)  empty-read boxes 0  fields 38/38 exactly right
+  row 1: needs review log: low confidence in total: box 3 (61%)
+  row 2: needs review log: low confidence in total: box 3 (61%)
+  row 3: needs review log: low confidence in total: box 3 (61%)
+  row 4: needs review log: low confidence in total: box 3 (61%)
+  row 5: needs review log: low confidence in total: box 3 (61%); low confidence in odo_end: box 4 (30%)
+  row 6: needs review log: low confidence in total: box 3 (61%)
+  row 7: needs review log: low confidence in total: box 3 (61%)
+
+=== hw_05.jpg   (fit 0.484, printed-form alignment: True)
+  r0_odo_start   read 681866   truth 581866
+  r1_odo_end     read 681932   truth 581932
+  r3_odo_end     read 592040   truth 582040
+  (out of scope) r4_client box 1: read 'T', truth 'T' - not counted
+  digits 97.2% (109)  letters 100.0% (16)  empty-read boxes 0  fields 25/28 exactly right
+  row 1: needs review log: low confidence in employee ID: box 1 (67%); odometer end 581906 is not greater than start 681866; low con
+  row 2: needs review log: low confidence in employee ID: box 1 (67%); miles written 026 but end - start = 100026; low confidence in
+  row 3: needs review log: low confidence in employee ID: box 1 (67%); odometer start 581936 is below the previous row's end 681932
+  row 4: needs review log: low confidence in employee ID: box 1 (67%); miles written 058 but end - start = 10058; low confidence in 
+  row 5: needs review log: low confidence in employee ID: box 1 (67%); odometer start 582040 is below the previous row's end 592040;
+
+=== hw_06.jpg   (fit 0.502, printed-form alignment: True)
+  digits 100.0% (109)  letters 100.0% (17)  empty-read boxes 0  fields 28/28 exactly right
+  row 1: auto-post    all checks passed
+  row 2: auto-post    all checks passed
+  row 3: auto-post    all checks passed
+  row 4: auto-post    all checks passed
+  row 5: needs review low confidence in date: box 1 (76%); low confidence in client: box 1 (69%)

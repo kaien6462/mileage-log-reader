@@ -4,6 +4,7 @@ check_handwritten.py - Read REAL handwritten Form ML-7 photos and compare with t
 Put pairs in data/handwritten/:   hw_01.jpg + hw_01.json   (answer key in the make_logs.py format)
 (iPhone HEIC photos: convert first, e.g.  sips -s format jpeg photo.heic --out data/handwritten/hw_01.jpg)
 
+Boxes listed under "out_of_scope_boxes" in a key (e.g. a crossed-out correction) are shown but not scored.
 For each photo it prints the read next to the truth, character accuracy (digits / letters),
 field accuracy, and the auto-post / needs-review decision per row (lookups simulated from the key).
 
@@ -41,12 +42,16 @@ def check(img_path, json_path, clf):
     lines = [f"=== {os.path.basename(img_path)}   (fit {res['registration'].get('fit')}, "
              f"printed-form alignment: {res['registration'].get('printed_form_alignment')})"]
     c = dict(d=0, d_ok=0, l=0, l_ok=0, missing=0, fields=0, fields_ok=0)
+    skip = t.get("out_of_scope_boxes", {})                 # e.g. a crossed-out correction: reported, not scored
     for name, want in truth_fields(t).items():
         f = res["fields"].get(name, {"text": "_" * len(want)})
         got = f["text"]
         c["fields"] += 1
         c["fields_ok"] += got == want
-        for g, w in zip(got, want):
+        for i, (g, w) in enumerate(zip(got, want)):
+            if i in skip.get(name, []):
+                lines.append(f"  (out of scope) {name} box {i + 1}: read {g!r}, truth {w!r} - not counted")
+                continue
             if g == "_":
                 c["missing"] += 1
                 continue
