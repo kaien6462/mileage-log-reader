@@ -1,0 +1,50 @@
+--- condition: clean  (50 logs) ---
+page found                : 100.00%
+row count correct         : 100.00%
+cell extraction rate      : 100.00%   (0 of 7972 written boxes read as empty)
+false-ink boxes           : 0 of 2728 blank boxes
+digit accuracy (found)    :  99.43%   (6894 digits)
+letter accuracy (found)   :  95.64%   (1078 letters)
+field accuracy employee_id :  92.00%   (50 fields)
+field accuracy week_ending :  96.00%   (50 fields)
+field accuracy date        :  97.24%   (326 fields)
+field accuracy client      :  87.42%   (326 fields)
+field accuracy odometer    :  96.17%   (652 fields)
+field accuracy miles       :  99.39%   (326 fields)
+field accuracy total       : 100.00%   (50 fields)
+numeric fields WITHOUT hazard :  97.34%   (1354 fields)
+numeric fields WITH touching/overflow :    n/a    (0 fields)
+
+--- condition: medium  (50 logs) ---
+page found                : 100.00%
+row count correct         : 100.00%
+cell extraction rate      : 100.00%   (0 of 7972 written boxes read as empty)
+false-ink boxes           : 0 of 2728 blank boxes
+digit accuracy (found)    :  99.03%   (6894 digits)
+letter accuracy (found)   :  95.18%   (1078 letters)
+field accuracy employee_id :  84.00%   (50 fields)
+field accuracy week_ending :  92.00%   (50 fields)
+field accuracy date        :  98.16%   (326 fields)
+field accuracy client      :  85.89%   (326 fields)
+field accuracy odometer    :  93.10%   (652 fields)
+field accuracy miles       :  98.77%   (326 fields)
+field accuracy total       : 100.00%   (50 fields)
+numeric fields WITHOUT hazard :  96.32%   (1333 fields)
+numeric fields WITH touching/overflow :  71.43%   (21 fields)
+
+--- condition: phone  (50 logs) ---
+page found                : 100.00%
+row count correct         : 100.00%
+cell extraction rate      :  99.99%   (1 of 7972 written boxes read as empty)
+false-ink boxes           : 0 of 2728 blank boxes
+digit accuracy (found)    :  97.59%   (6893 digits)
+letter accuracy (found)   :  90.72%   (1078 letters)
+field accuracy employee_id :  80.00%   (50 fields)
+field accuracy week_ending :  84.00%   (50 fields)
+field accuracy date        :  92.94%   (326 fields)
+field accuracy client      :  73.62%   (326 fields)
+field accuracy odometer    :  84.66%   (652 fields)
+field accuracy miles       :  95.71%   (326 fields)
+field accuracy total       :  96.00%   (50 fields)
+numeric fields WITHOUT hazard :  90.63%   (1302 fields)
+numeric fields WITH touching/overflow :  67.31%   (52 fields)
