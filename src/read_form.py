@@ -213,7 +213,8 @@ def pen_mask(ink):
     on_line = _outline_template() > 0.5
     band = cv2.dilate(on_line.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
     line_level = float(np.percentile(ink[on_line], 90))          # upper end of the printed lines (shared dividers are the darkest)
-    pen_level = float(np.percentile(ink[ink > PEN_LEVEL], 95))   # how dark the pen is on this page
+    pen = ink[ink > PEN_LEVEL]
+    pen_level = float(np.percentile(pen, 95)) if pen.size else 1.0   # nothing dark on the page at all   # how dark the pen is on this page
     band_thr = max(PEN_LEVEL, line_level + 0.5 * (pen_level - line_level))
     return np.where(band, ink > band_thr, ink > PEN_LEVEL).astype(np.uint8)
 
@@ -414,8 +415,8 @@ def save_debug(out_dir, page, norm, reads):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
-    ap.add_argument("--digit-model", default="digit_model.pt")
-    ap.add_argument("--letter-model", default="letter_model.pt")
+    ap.add_argument("--digit-model", default="models/digit_model.pt")
+    ap.add_argument("--letter-model", default="models/letter_model.pt")
     ap.add_argument("--debug", default=None, help="folder to save stage pictures")
     ap.add_argument("--json", action="store_true", help="print the full result as JSON")
     a = ap.parse_args()

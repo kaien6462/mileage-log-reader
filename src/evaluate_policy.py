@@ -8,7 +8,7 @@ confidence thresholds and reports, separately:
   * AUTO-POST RATE       : share of logs posted with no clerk
   * COST per 10,000 logs : clerk keying ($3.40 per routed log) + priced misreads on auto-posted logs
 
-Uses the TEAM rules in validate.py (SCRUM-16, Susan) when it is in the same folder.
+Uses the TEAM rules in validate.py (SCRUM-16, Kaien) when it is in the same folder.
 
 Run (from the folder that has read_form.py, train_classifiers.py and the .pt models):
   python evaluate_policy.py data\\test_official --out results_policy.txt
@@ -21,7 +21,6 @@ Rules (Form ML-7 spec, same list as validate.py's docstring):
   5. total = sum of the MILES column
   6. every character's confidence >= threshold (letters in client / employee ID use their own threshold)
 A LOG is auto-posted only if every row passes and the header (employee ID, week ending, total) passes.
-check_log() has the same shape as validate.validate(), so Susan's SCRUM-16 can reuse or replace it.
 """
 import argparse
 import datetime as dt
@@ -52,53 +51,6 @@ def _week_start_end(week_ending):
         return None
     return (d - dt.timedelta(days=6), d) if d.weekday() == 6 else None
 
-
-def check_log(result, conf_digit=0.0, conf_letter=0.0):
-    """Return validate()-style decisions, one per row:
-       {"row": n, "decision": "auto-post"|"needs review", "reasons": [...]}"""
-    rows = result["rows"]
-    log_reasons = []                                    # problems that block the WHOLE log
-    wk = result["week_ending"]
-    span = _week_start_end(wk) if "?" not in wk else None
-    if span is None:
-        log_reasons.append("week ending is not a valid Sunday")
-    if "?" in result["employee_id"] or "?" in result["total_written"]:
-        log_reasons.append("employee ID or total has an unread box")
-    if result.get("employee_id_conf", 1) < conf_letter:
-        log_reasons.append("low confidence on employee ID")
-    if result.get("total_written_conf", 1) < conf_digit:
-        log_reasons.append("low confidence on total")
-    miles = [_int(r["miles_written"]) for r in rows]
-    if None in miles or _int(result["total_written"]) != sum(m for m in miles if m is not None):
-        log_reasons.append("total does not equal the sum of the miles column")
-
-    out, prev_end = [], None
-    for r in rows:
-        why = list(log_reasons)
-        if any("?" in r[k] for k in ("date", "client", "odo_start", "odo_end", "miles_written")):
-            why.append("unread box")
-        s, e, m = _int(r["odo_start"]), _int(r["odo_end"]), _int(r["miles_written"])
-        if None not in (s, e, m):
-            if m != e - s:
-                why.append("miles != end - start")
-            if e <= s:
-                why.append("odometer did not move forward")
-            if prev_end is not None and s < prev_end:
-                why.append("odometer start is before previous row's end")
-            prev_end = e
-        if span and "?" not in r["date"]:
-            try:
-                d = dt.date(span[1].year, int(r["date"][:2]), int(r["date"][2:]))
-                if not span[0] <= d <= span[1]:
-                    why.append("trip date outside the week")
-            except ValueError:
-                why.append("trip date is not a real date")
-        if r.get("client_conf", 1) < conf_letter:
-            why.append("low confidence on client letters")
-        if min(r.get(k + "_conf", 1) for k in ("date", "odo_start", "odo_end", "miles_written")) < conf_digit:
-            why.append("low confidence on a digit")
-        out.append({"row": r["row"], "decision": "needs review" if why else "auto-post", "reasons": why})
-    return out
 
 
 # ----------------------------------------------------------------------------- scoring
@@ -142,11 +94,12 @@ def summarize(scored, label):
     only_l = sum(s["letters"] and not s["digits"] for s in bad)
     dig = sum(s["digits"] for s in bad)
     priced = sum(s["cost"] for s in auto) * LOGS_PER_MONTH / n
+    keying = (n - len(auto)) * KEYING * LOGS_PER_MONTH / n          # every routed log is keyed by a clerk
     rows_total = sum(len(s["auto_rows"]) for s in scored)
     rows_auto = sum(sum(s["auto_rows"]) for s in scored)
     rows_auto_bad = sum(b and a for s in scored for a, b in zip(s["auto_rows"], s["row_bad"]))
     return (f"{label:<34}| LOG-level: auto-post {100 * len(auto) / n:5.1f}%  "
-            f"wrong {len(bad):>2}/{len(auto):<2} (letters-only {only_l}, digit-related {dig})  priced misread ${priced:>7,.0f}/mo"
+            f"wrong {len(bad):>2}/{len(auto):<2} (letters-only {only_l}, digit-related {dig})  priced misread ${priced:>7,.0f}/mo  keying ${keying:>7,.0f}/mo  TOTAL ${priced + keying:>7,.0f}/mo"
             f" | ROW-level: auto-post {100 * rows_auto / rows_total:5.1f}%  wrong {rows_auto_bad}/{rows_auto}"
             f" ({100 * rows_auto_bad / max(rows_auto, 1):.1f}%)")
 
@@ -174,7 +127,7 @@ def collect(folder, clf, cache):
 
 def evaluate(folder, clf, cache="reads_cache.pkl"):
     import random
-    import validate as team                              # Susan's SCRUM-16 rules
+    import validate as team                              # Kaien's SCRUM-16 rules
     data = collect(folder, clf, cache)
     rng = random.Random(2026)
     L = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -183,7 +136,7 @@ def evaluate(folder, clf, cache="reads_cache.pkl"):
     def reference(truth, mode):
         if mode == "none":
             return None
-        ref = team.reference_from_truth(truth)           # her simulation: HR list = the ONE true ID
+        ref = team.reference_from_truth(truth)           # validate.py's simulation: HR list = the ONE true ID
         if mode == "realistic":
             ref["employees"] = ref["employees"] | others  # HR list also holds 5,000 other valid IDs
         return ref
@@ -220,10 +173,10 @@ def evaluate(folder, clf, cache="reads_cache.pkl"):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
-    ap.add_argument("--digit-model", default="digit_model.pt")
-    ap.add_argument("--letter-model", default="letter_model.pt")
+    ap.add_argument("--digit-model", default="models/digit_model.pt")
+    ap.add_argument("--letter-model", default="models/letter_model.pt")
     ap.add_argument("--cache", default="reads_cache.pkl", help="reads are saved here; delete it to re-read the images")
-    ap.add_argument("--out", default="results_policy.txt")
+    ap.add_argument("--out", default="results/results_policy.txt")
     a = ap.parse_args()
     clf = rf.TorchClassifier(a.digit_model, a.letter_model) if not os.path.exists(a.cache) else None
     text = evaluate(a.folder, clf, a.cache)

@@ -1,0 +1,3 @@
+[clean ] 50 logs | rows found 100.0% | cell extraction 100.0% | field accuracy  95.3% | row raw error  29.8% | row auto-post  50.0% | wrong & posted 0/163 rows
+[medium] 50 logs | rows found 100.0% | cell extraction 100.0% | field accuracy  93.7% | row raw error  44.2% | row auto-post  25.5% | wrong & posted 0/83 rows
+[phone ] 50 logs | rows found 100.0% | cell extraction  99.9% | field accuracy  86.3% | row raw error  67.2% | row auto-post  12.0% | wrong & posted 0/39 rows
