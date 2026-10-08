@@ -40,6 +40,7 @@ FORM = Form()                          # the form our generator draws; same box 
 N_ROWS = FORM.n_rows
 PAD = 4                                # pixels drawn around each box in the demo overlay
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
+MIN_ROW_BOXES = 3                      # a row counts as written only if at least this many of its 22 boxes have ink
 ROW_FIELDS = [("date", "date"), ("client", "client"), ("odo_start", "odo_start"),
               ("odo_end", "odo_end"), ("miles", "miles_written")]   # (form field, output key)
 
@@ -97,27 +98,54 @@ def align_printed_form(page):
     x1, y1 = np.percentile(b[:, 0], 99), np.percentile(b[:, 1], 99)
     A = cv2.getAffineTransform(np.float32([[x0, y0], [x1, y0], [x1, y1]]),
                                np.float32([[_LAY_C[0], _LAY_C[1]], [_LAY_C[2], _LAY_C[1]], [_LAY_C[2], _LAY_C[3]]]))
-    out = cv2.warpAffine(page, A, (rf.W, rf.H), flags=cv2.INTER_LINEAR, borderValue=255)
-    for search in (24, 12, 6):
+    # perspective: match every detected box to the nearest layout box, fit a homography (RANSAC), twice
+    src = b[:, :2].astype(np.float32)
+    H = np.vstack([A, [0, 0, 1]]).astype(np.float64)
+    lay = np.stack([(_ALL[:, 0] + _ALL[:, 2]) / 2, (_ALL[:, 1] + _ALL[:, 3]) / 2], 1)
+    for tol in (30, 12):
+        mapped = cv2.perspectiveTransform(src[None], H)[0]
+        d = np.linalg.norm(mapped[:, None] - lay[None], axis=2)
+        j, ok = d.argmin(1), d.min(1) < tol
+        if ok.sum() < 30:
+            break
+        Hn, _ = cv2.findHomography(src[ok], lay[j[ok]].astype(np.float32), cv2.RANSAC, 6.0)
+        if Hn is None:
+            break
+        H = Hn
+    out = cv2.warpPerspective(page, H, (rf.W, rf.H), flags=cv2.INTER_LINEAR, borderValue=255)
+    for search in (12, 6):
         M = rf._local_homography(rf.ink_map(out), rf._outline_template(), search=search)
         if M is not None:
             out = cv2.warpPerspective(out, M, (rf.W, rf.H), flags=cv2.INTER_LINEAR, borderValue=255)
     return out
 
 
+def _register_one(gray):
+    """read_form.register_page; if the boxes fit poorly (a form printed with margins), align_printed_form."""
+    page, info = rf.register_page(gray)
+    info["fit"] = round(outline_fit(page), 3)
+    info["printed_form_alignment"] = False
+    if info["fit"] < PRINTED_FIT:
+        alt = align_printed_form(page)
+        if alt is not None and outline_fit(alt) > info["fit"] + 0.03:
+            page = alt
+            info.update(fit=round(outline_fit(alt), 3), printed_form_alignment=True)
+    return page, info
+
+
 def register_gray(img):
     """Photo -> (flat 2200x1400 gray page aligned to the form, info).
-    read_form.register_page first; if the boxes fit poorly (a form printed with margins), align_printed_form."""
+    Form ML-7 is landscape: a portrait photo (phone held upright) is tried turned both ways and the
+    turn whose printed boxes fit best is kept. Landscape photos are used as they are."""
     key = hashlib.md5(np.ascontiguousarray(img).tobytes()).hexdigest() + str(img.shape)
     if _LAST["key"] != key:
-        page, info = rf.register_page(to_gray(img))
-        info["fit"] = round(outline_fit(page), 3)
-        info["printed_form_alignment"] = False
-        if info["fit"] < PRINTED_FIT:
-            alt = align_printed_form(page)
-            if alt is not None and outline_fit(alt) > info["fit"] + 0.03:
-                page = alt
-                info.update(fit=round(outline_fit(alt), 3), printed_form_alignment=True)
+        gray = to_gray(img)
+        if gray.shape[0] > gray.shape[1]:
+            tries = [(_register_one(np.ascontiguousarray(np.rot90(gray, k))), k) for k in (-1, 1)]  # clockwise, counter
+            (page, info), k = max(tries, key=lambda t: t[0][1]["fit"])
+            info["rotated"] = "clockwise" if k == -1 else "counter-clockwise"
+        else:
+            page, info = _register_one(gray)
         _LAST.update(key=key, page=page, info=info)
     return _LAST["page"], _LAST["info"]
 
@@ -182,8 +210,8 @@ def read_log(img, clf=None):
 
     for r in range(N_ROWS):
         row_reads = {name: _field(reads[f"r{r}_{name}"]) for name, _ in ROW_FIELDS}
-        if not any(any(f["filled"]) for f in row_reads.values()):
-            continue                                    # unused row
+        if sum(sum(f["filled"]) for f in row_reads.values()) < MIN_ROW_BOXES:
+            continue                                    # unused row (a speck or shadow in one box is not a row)
         row = {"row": r + 1}
         for name, key in ROW_FIELDS:
             row[key] = row_reads[name]["text"]
