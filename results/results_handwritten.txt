@@ -1,0 +1,9 @@
+=== hw_01.jpg   (fit 0.324, printed-form alignment: True)
+  r5_client      read POL      truth PDL
+  digits 100.0% (128)  letters 95.0% (20)  empty-read boxes 0  fields 32/33 exactly right
+  row 1: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
+  row 2: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%);
+  row 3: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
+  row 4: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
+  row 5: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%)
+  row 6: needs review log: low confidence in employee ID: box 1 (58%), box 2 (39%); log: low confidence in week ending: box 2 (51%);

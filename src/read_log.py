@@ -54,12 +54,70 @@ def to_gray(img):
 
 _LAST = {"key": None}                  # the demo asks for the same page several times: register it once
 
+# A form PRINTED on letter paper has margins, so the paper's corners are not the form's corners and
+# read_form.register_page() lands the boxes in the wrong place. When the printed box outlines fit poorly,
+# we find the printed boxes themselves and map them onto the layout. All synthetic test logs fit at
+# 0.40 or better (this step never runs for them); real printed-form photos fit below 0.20.
+PRINTED_FIT = 0.30
+_ON_LINE = None
+_ALL = np.array([r for rects in rf.layout().values() for r in rects], float)
+_LAY_C = ((_ALL[:, 0] + _ALL[:, 2]).min() / 2, (_ALL[:, 1] + _ALL[:, 3]).min() / 2,
+          (_ALL[:, 0] + _ALL[:, 2]).max() / 2, (_ALL[:, 1] + _ALL[:, 3]).max() / 2)   # extent of box centres
+
+
+def outline_fit(page):
+    """Share of ink under the layout's printed box outlines (higher = boxes sit where we expect them)."""
+    global _ON_LINE
+    if _ON_LINE is None:
+        _ON_LINE = rf._outline_template() > 0.5
+    return float(cv2.dilate(rf.ink_map(page), np.ones((5, 5), np.uint8))[_ON_LINE].mean())
+
+
+def find_printed_boxes(page):
+    """Centres of printed boxes: square holes enclosed by thin straight walls, all about the same size."""
+    ink = (rf.ink_map(page) > 0.15).astype(np.uint8)
+    h = cv2.morphologyEx(ink, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (21, 1)))
+    v = cv2.morphologyEx(ink, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 21)))
+    walls = cv2.dilate(h | v, np.ones((3, 3), np.uint8))
+    n, _, st, _ = cv2.connectedComponentsWithStats(1 - walls, connectivity=4)
+    b = np.array([(x + w / 2, y + hh / 2, w, hh) for x, y, w, hh, a in st[1:]
+                  if 20 <= w <= 110 and 20 <= hh <= 110 and 0.7 < w / hh < 1.4 and a > 0.75 * w * hh])
+    if len(b) == 0:
+        return b
+    mw, mh = np.median(b[:, 2]), np.median(b[:, 3])
+    return b[(abs(b[:, 2] - mw) < 0.2 * mw) & (abs(b[:, 3] - mh) < 0.2 * mh)]   # the common box size only
+
+
+def align_printed_form(page):
+    """Map the extent of the detected boxes onto the layout, then read_form's local refinement (wider first)."""
+    b = find_printed_boxes(page)
+    if len(b) < 30:
+        return None
+    x0, y0 = np.percentile(b[:, 0], 1), np.percentile(b[:, 1], 1)
+    x1, y1 = np.percentile(b[:, 0], 99), np.percentile(b[:, 1], 99)
+    A = cv2.getAffineTransform(np.float32([[x0, y0], [x1, y0], [x1, y1]]),
+                               np.float32([[_LAY_C[0], _LAY_C[1]], [_LAY_C[2], _LAY_C[1]], [_LAY_C[2], _LAY_C[3]]]))
+    out = cv2.warpAffine(page, A, (rf.W, rf.H), flags=cv2.INTER_LINEAR, borderValue=255)
+    for search in (24, 12, 6):
+        M = rf._local_homography(rf.ink_map(out), rf._outline_template(), search=search)
+        if M is not None:
+            out = cv2.warpPerspective(out, M, (rf.W, rf.H), flags=cv2.INTER_LINEAR, borderValue=255)
+    return out
+
 
 def register_gray(img):
-    """Photo -> (flat 2200x1400 gray page aligned to the form, info). Uses read_form.register_page."""
+    """Photo -> (flat 2200x1400 gray page aligned to the form, info).
+    read_form.register_page first; if the boxes fit poorly (a form printed with margins), align_printed_form."""
     key = hashlib.md5(np.ascontiguousarray(img).tobytes()).hexdigest() + str(img.shape)
     if _LAST["key"] != key:
         page, info = rf.register_page(to_gray(img))
+        info["fit"] = round(outline_fit(page), 3)
+        info["printed_form_alignment"] = False
+        if info["fit"] < PRINTED_FIT:
+            alt = align_printed_form(page)
+            if alt is not None and outline_fit(alt) > info["fit"] + 0.03:
+                page = alt
+                info.update(fit=round(outline_fit(alt), 3), printed_form_alignment=True)
         _LAST.update(key=key, page=page, info=info)
     return _LAST["page"], _LAST["info"]
 
