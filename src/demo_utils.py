@@ -5,8 +5,8 @@ tested without Streamlit.
 import numpy as np
 from PIL import Image, ImageDraw
 
-from read_log import FORM, PAD, extract_cells, register
-from normalize import normalize_cell
+import read_form as rf
+from read_log import FORM, PAD, register_gray
 
 LOW_CONFIDENCE = 0.80        # characters below this are highlighted in the demo
 
@@ -58,9 +58,13 @@ def low_confidence(result, threshold=LOW_CONFIDENCE):
 
 
 def field_stages(img, field):
-    """For one field: the raw crops and their normalized 28x28 versions (None = empty box)."""
-    crops = extract_cells(register(img))[field]
-    return crops, [normalize_cell(c) for c in crops]
+    """For one field: the box as photographed (registered page, with margin) and the
+    normalized 28x28 image the model sees (None = empty box)."""
+    page, _ = register_gray(img)
+    m = rf.WINDOW
+    crops = [page[y0 - m:y1 + m, x0 - m:x1 + m] for x0, y0, x1, y1 in FORM.fields[field]]
+    windows = rf.extract_cells(page)[field]
+    return crops, [rf.normalize_cell(w) for w in windows]
 
 
 def to_display(img28, scale=4):

@@ -2,163 +2,134 @@
 read_log.py - End-to-end reader for one Form ML-7 image (SCRUM-22).
 
     photo -> 1 register -> 2 extract cells -> 3 normalize -> 4 classify
-          -> 5 assemble fields and rows -> (6 validation, SCRUM-16)
+          -> 5 assemble fields and rows -> (6 validation, SCRUM-16: validate.py)
 
-This is the skeleton that wires the stages together. Two stages are
-PLACEHOLDERS that teammates replace without touching anything else:
+Stages 1-4 are Tenaj's read_form.py (SCRUM-14/15): page corners + template alignment,
+pen-ink assignment to boxes, EMNIST-style bounding-box normalization, digit / letter CNNs.
+This file is the ONE entry point the rest of the project uses (validate.py, app.py,
+demo_utils.py, tests/), and it shapes the output for them:
 
-    register()     SCRUM-15 (Tenaj): straighten a photo onto the 2200x1400 form.
-                   Placeholder = plain resize, correct only for flat clean scans.
-    Classifier     SCRUM-14 (Tenaj): the trained model(s).
-                   Placeholder = returns '?' with confidence 0 for every cell.
+    {"employee_id": "WE0634", "week_ending": "092726", "total_written": "0085",
+     "rows": [{"row": 1, "date": "0921", "client": "KMR", "odo_start": "048213",
+               "odo_end": "048238", "miles_written": "025"}, ...],
+     "fields": {"r0_odo_start": {"text": "048213", "filled": [True, ...],
+                                 "confidence": [0.99, ...]}, ...},
+     "problems": ["r3_miles: 1 of 3 boxes empty", ...],     # segmentation, apart from recognition
+     "registration": {"page_found": True, ...}}
 
-Output has the same keys as the ground-truth JSON from make_logs.py, plus a
-confidence per character and a list of segmentation problems, so the
-evaluation script (SCRUM-26) can compare the two directly.
+An empty box reads as '_' (validate.py routes the row as "not fully read").
 
 Run:
-    python src/read_log.py data/test_official/clean/log_0001.png
+    python src/read_log.py data/test_official/phone/log_0001.png
+    python src/read_log.py photo.jpg --json
 """
+import hashlib
 import json
 import os
 import sys
 
+import cv2
 import numpy as np
 from PIL import Image
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import read_form as rf  # noqa: E402
 from make_logs import Form  # noqa: E402
-from normalize import normalize_cell  # noqa: E402
 
-FORM = Form()                         # the form our own generator draws: box positions are exact
+FORM = Form()                          # the form our generator draws; same box positions as rf.layout()
 N_ROWS = FORM.n_rows
-PAD = 4                               # pixels kept around each box when cutting it out
-
-# Which character group each box may contain (Form ML-7 field specification).
-# employee ID = 2 letters + 4 digits; client code = 3 letters; everything else digits.
-FIELD_GROUPS = {"emp_id": ["letters"] * 2 + ["digits"] * 4, "client": ["letters"] * 3}
+PAD = 4                                # pixels drawn around each box in the demo overlay
+MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
 ROW_FIELDS = [("date", "date"), ("client", "client"), ("odo_start", "odo_start"),
               ("odo_end", "odo_end"), ("miles", "miles_written")]   # (form field, output key)
 
 
 # --------------------------------------------------------------------------- 1 register
+def to_gray(img):
+    """RGB / RGBA / gray array -> gray uint8 (PIL loads RGB, read_form expects gray or BGR)."""
+    if img.ndim == 2:
+        return img
+    return cv2.cvtColor(np.ascontiguousarray(img[..., :3]), cv2.COLOR_RGB2GRAY)
+
+
+_LAST = {"key": None}                  # the demo asks for the same page several times: register it once
+
+
+def register_gray(img):
+    """Photo -> (flat 2200x1400 gray page aligned to the form, info). Uses read_form.register_page."""
+    key = hashlib.md5(np.ascontiguousarray(img).tobytes()).hexdigest() + str(img.shape)
+    if _LAST["key"] != key:
+        page, info = rf.register_page(to_gray(img))
+        _LAST.update(key=key, page=page, info=info)
+    return _LAST["page"], _LAST["info"]
+
+
 def register(img):
-    """
-    PLACEHOLDER for SCRUM-15. Must return the page as an RGB array of exactly
-    Form.H x Form.W (1400 x 2200), straightened so the printed boxes sit at the
-    coordinates in FORM.fields. A plain resize only works for flat, uncropped scans.
-    """
-    return np.asarray(Image.fromarray(img).resize((Form.W, Form.H)))
+    """Photo -> registered page as RGB (for display in the demo)."""
+    page, _ = register_gray(img)
+    return np.stack([page] * 3, axis=-1)
 
 
-# --------------------------------------------------------------------------- 2 extract cells
+# --------------------------------------------------------------------------- 2 + 3
 def extract_cells(page):
-    """Cut every box out of the registered page: {field name: [crop, crop, ...]}."""
-    cells = {}
-    for name, boxes in FORM.fields.items():
-        cells[name] = [page[max(0, y0 - PAD):y1 + PAD, max(0, x0 - PAD):x1 + PAD] for x0, y0, x1, y1 in boxes]
-    return cells
+    """Registered page (gray or RGB) -> {field: [ink window per box]} (read_form.extract_cells)."""
+    return rf.extract_cells(page if page.ndim == 2 else page[..., 0])
+
+
+normalize_cell = rf.normalize_cell     # window -> 28x28 EMNIST-style image, or None if the box is empty
 
 
 # --------------------------------------------------------------------------- 4 classify
 class Classifier:
-    """
-    The trained digit and letter CNNs (SCRUM-14, trained by Tenaj with
-    src/train_classifiers.py), loaded from models/.
+    """The two trained CNNs in models/ (digits 0-9, letters A-Z), via read_form.TorchClassifier."""
 
-        predict(images, group) -> (chars, confidences)
-            images : list of 28x28 float32 arrays (normalize_cell output, values 0-1)
-            group  : "digits" or "letters"  (each group has its own model, so a digit
-                     box can never be read as a letter and vice versa)
-            chars  : list of single characters
-            confidences : top softmax probability for each character, 0-1
-
-    If the weight files are missing, every cell is read as '?' with confidence 0,
-    so the demo still opens and shows the problem instead of crashing.
-    """
-    MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
-    CHARS = {"digits": "0123456789", "letters": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}
-    FILES = {"digits": "digit_model.pt", "letters": "letter_model.pt"}
-
-    def __init__(self, model_dir=None):
-        model_dir = model_dir or self.MODEL_DIR
-        self.models = {}
-        try:
-            import torch
-            from train_classifiers import SmallCNN
-        except ImportError as e:
-            print(f"WARNING: cannot load the classifier ({e}); every cell will read '?'")
-            return
-        self.torch = torch
-        for group, fname in self.FILES.items():
-            path = os.path.join(model_dir, fname)
-            if not os.path.exists(path):
-                print(f"WARNING: {path} not found; {group} will read '?'")
-                continue
-            model = SmallCNN(len(self.CHARS[group]))
-            model.load_state_dict(torch.load(path, map_location="cpu"))
-            model.eval()
-            self.models[group] = model
+    def __init__(self, digit_path=None, letter_path=None):
+        digit_path = digit_path or os.path.join(MODEL_DIR, "digit_model.pt")
+        letter_path = letter_path or os.path.join(MODEL_DIR, "letter_model.pt")
+        for p in (digit_path, letter_path):
+            if not os.path.exists(p):
+                raise FileNotFoundError(f"{p} not found - run 'git pull' (the models live in models/)")
+        self.model = rf.TorchClassifier(digit_path, letter_path)
 
     def predict(self, images, group):
+        """images: list of 28x28 arrays, group 'digits' | 'letters' -> (chars, confidences)."""
         if not images:
             return [], []
-        if group not in self.models:
-            return ["?"] * len(images), [0.0] * len(images)
-        x = self.torch.from_numpy(np.stack(images).astype(np.float32)).unsqueeze(1)  # (N, 1, 28, 28)
-        with self.torch.no_grad():
-            probs = self.torch.softmax(self.models[group](x), dim=1)
-        conf, idx = probs.max(dim=1)
-        chars = self.CHARS[group]
-        return [chars[i] for i in idx.tolist()], conf.tolist()
+        kind, alphabet = ("D", rf.DIGITS) if group == "digits" else ("L", rf.LETTERS)
+        idx, conf = self.model.predict(np.stack(images).astype(np.float32), kind)
+        return [alphabet[int(i)] for i in idx], [float(p) for p in conf]
 
 
-def group_of(field, i):
-    """Character group allowed in box i of a field."""
-    base = field.split("_", 1)[1] if field.startswith("r") and field[1].isdigit() else field
-    return FIELD_GROUPS.get(base, ["digits"] * 10)[i]
-
-
-# --------------------------------------------------------------------------- 3 + 4 + 5
-def read_field(field, crops, clf):
-    """Normalize every crop of one field, classify the non-empty ones, return text + details."""
-    imgs = [normalize_cell(c) for c in crops]
-    chars, conf = [""] * len(crops), [None] * len(crops)
-    for group in ("digits", "letters"):
-        idx = [i for i, im in enumerate(imgs) if im is not None and group_of(field, i) == group]
-        if idx:
-            c, p = clf.predict([imgs[i] for i in idx], group)
-            for i, ch, pr in zip(idx, c, p):
-                chars[i], conf[i] = ch, float(pr)
-    filled = [im is not None for im in imgs]
-    return {"text": "".join(ch if f else "_" for ch, f in zip(chars, filled)),
-            "filled": filled, "confidence": conf}
+# --------------------------------------------------------------------------- 5 assemble
+def _field(reads):
+    """read_form reads for one field [(char, conf) | None, ...] -> {"text", "filled", "confidence"}."""
+    return {"text": "".join(r[0] if r else "_" for r in reads),
+            "filled": [r is not None for r in reads],
+            "confidence": [float(r[1]) if r else None for r in reads]}
 
 
 def read_log(img, clf=None):
     """Full read of one log image (RGB array). Returns a dict shaped like the ground-truth JSON."""
     clf = clf or Classifier()
-    page = register(img)
-    cells = extract_cells(page)
-
-    def field(name):
-        return read_field(name, cells[name], clf)
+    page, info = register_gray(img)
+    cells = rf.extract_cells(page)
+    norm = {f: [rf.normalize_cell(c) for c in cs] for f, cs in cells.items()}
+    reads = rf.classify_cells(norm, clf.model)
 
     out = {"employee_id": None, "week_ending": None, "rows": [], "total_written": None,
-           "fields": {}, "problems": []}
+           "fields": {}, "problems": [], "registration": info}
     for name, key in [("emp_id", "employee_id"), ("week_ending", "week_ending"), ("total_miles", "total_written")]:
-        f = field(name)
-        out["fields"][name] = f
-        out[key] = f["text"]
+        out["fields"][name] = _field(reads[name])
+        out[key] = out["fields"][name]["text"]
 
     for r in range(N_ROWS):
-        reads = {key: field(f"r{r}_{name}") for name, key in ROW_FIELDS}
-        if not any(any(f["filled"]) for f in reads.values()):
+        row_reads = {name: _field(reads[f"r{r}_{name}"]) for name, _ in ROW_FIELDS}
+        if not any(any(f["filled"]) for f in row_reads.values()):
             continue                                    # unused row
         row = {"row": r + 1}
-        for (name, key), f in zip(ROW_FIELDS, reads.values()):
-            row[key] = f["text"]
-            out["fields"][f"r{r}_{name}"] = f
+        for name, key in ROW_FIELDS:
+            row[key] = row_reads[name]["text"]
+            out["fields"][f"r{r}_{name}"] = row_reads[name]
         out["rows"].append(row)
 
     # segmentation check: every used field must have all of its boxes filled
@@ -166,12 +137,14 @@ def read_log(img, clf=None):
         missing = f["filled"].count(False)
         if missing:
             out["problems"].append(f"{name}: {missing} of {len(f['filled'])} boxes empty")
+    if not info["page_found"]:
+        out["problems"].append("page edges not found - assumed the photo is the whole page")
     return out
 
 
 def main():
     if len(sys.argv) < 2:
-        print("usage: python src/read_log.py <image>")
+        print("usage: python src/read_log.py <image> [--json]")
         return
     img = np.asarray(Image.open(sys.argv[1]).convert("RGB"))
     res = read_log(img)
@@ -183,7 +156,7 @@ def main():
     for p in res["problems"]:
         print("  -", p)
     if "--json" in sys.argv:
-        print(json.dumps({k: v for k, v in res.items() if k != "fields"}, indent=1))
+        print(json.dumps(res, indent=1))
 
 
 if __name__ == "__main__":

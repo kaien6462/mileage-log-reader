@@ -142,9 +142,9 @@ def evaluate(folder, clf, verbose=True):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
-    ap.add_argument("--digit-model", default="digit_model.pt")
-    ap.add_argument("--letter-model", default="letter_model.pt")
-    ap.add_argument("--out", default="results_official.txt")
+    ap.add_argument("--digit-model", default="models/digit_model.pt")
+    ap.add_argument("--letter-model", default="models/letter_model.pt")
+    ap.add_argument("--out", default="results/results_official.txt")
     a = ap.parse_args()
     text = evaluate(a.folder, rf.TorchClassifier(a.digit_model, a.letter_model))
     open(a.out, "w").write(text)
