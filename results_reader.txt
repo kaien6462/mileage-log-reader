@@ -1,0 +1,44 @@
+--- condition: clean  (10 logs) ---
+page found                : 100.00%
+row count correct         : 100.00%
+cell extraction rate      : 100.00%   (0 of 1832 written boxes read as empty)
+false-ink boxes           : 0 of 308 blank boxes
+digit accuracy (found)    :  99.31%   (1584 digits)
+letter accuracy (found)   :  94.35%   (248 letters)
+field accuracy employee_id :  90.00%   (10 fields)
+field accuracy week_ending : 100.00%   (10 fields)
+field accuracy date        :  97.37%   (76 fields)
+field accuracy client      :  82.89%   (76 fields)
+field accuracy odometer    :  96.05%   (152 fields)
+field accuracy miles       :  97.37%   (76 fields)
+field accuracy total       : 100.00%   (10 fields)
+
+--- condition: field  (10 logs) ---
+page found                : 100.00%
+row count correct         : 100.00%
+cell extraction rate      :  99.95%   (1 of 1832 written boxes read as empty)
+false-ink boxes           : 0 of 308 blank boxes
+digit accuracy (found)    :  98.17%   (1583 digits)
+letter accuracy (found)   :  91.94%   (248 letters)
+field accuracy employee_id :  80.00%   (10 fields)
+field accuracy week_ending :  90.00%   (10 fields)
+field accuracy date        :  93.42%   (76 fields)
+field accuracy client      :  77.63%   (76 fields)
+field accuracy odometer    :  92.76%   (152 fields)
+field accuracy miles       :  94.74%   (76 fields)
+field accuracy total       :  70.00%   (10 fields)
+
+--- condition: phone  (10 logs) ---
+page found                : 100.00%
+row count correct         : 100.00%
+cell extraction rate      : 100.00%   (0 of 1634 written boxes read as empty)
+false-ink boxes           : 0 of 506 blank boxes
+digit accuracy (found)    :  99.15%   (1413 digits)
+letter accuracy (found)   :  96.38%   (221 letters)
+field accuracy employee_id :  80.00%   (10 fields)
+field accuracy week_ending : 100.00%   (10 fields)
+field accuracy date        :  98.51%   (67 fields)
+field accuracy client      :  89.55%   (67 fields)
+field accuracy odometer    :  93.28%   (134 fields)
+field accuracy miles       : 100.00%   (67 fields)
+field accuracy total       : 100.00%   (10 fields)
