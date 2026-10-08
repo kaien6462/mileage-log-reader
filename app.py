@@ -104,8 +104,22 @@ else:
     st.stop()
 
 truth_path = os.path.splitext(src_path)[0] + ".json" if src_path else None
-reference = (reference_from_truth(json.load(open(truth_path)))
-             if truth_path and os.path.exists(truth_path) else None)
+truth = json.load(open(truth_path)) if truth_path and os.path.exists(truth_path) else None
+reference = reference_from_truth(truth) if truth else None
+
+
+def truth_text(field):
+    """What was really written in a field, from the answer key (None if there is no key)."""
+    if not truth:
+        return None
+    header = {"emp_id": "employee_id", "week_ending": "week_ending", "total_miles": "total_written"}
+    if field in header:
+        return truth[header[field]]
+    row, name = field.split("_", 1)
+    r = int(row[1:])
+    if r >= len(truth["rows"]):
+        return None
+    return truth["rows"][r]["miles_written" if name == "miles" else name]
 
 # ======================================================================= 2. read + check
 with st.spinner("Reading the log…"):
@@ -201,9 +215,17 @@ if result["problems"]:
 unsure = low_confidence(result)
 with st.expander(f"Low-confidence characters ({len(unsure)})", expanded=bool(unsure)):
     if unsure:
-        st.table([{"Where on the form": pretty(f), "Field as read": mark(result["fields"][f]["text"], i - 1),
-                   "Character": f"#{i} from the left", "Read as": ch, "Confidence": f"{p:.0%}"}
-                  for f, i, ch, p in unsure])
+        rows = []
+        for f, i, ch, p in unsure:
+            row = {"Where on the form": pretty(f), "Field as read": mark(result["fields"][f]["text"], i - 1),
+                   "Character": f"#{i} from the left", "Read as": ch}
+            t = truth_text(f)
+            if t is not None and i - 1 < len(t):
+                row["Actually written"] = t[i - 1]
+                row["Correct?"] = "✅ yes" if t[i - 1] == ch else "❌ misread"
+            row["Confidence"] = f"{p:.0%}"
+            rows.append(row)
+        st.table(rows)
         st.markdown("**What the model saw for each of these characters** (photo → model input):")
         shown = unsure[:8]
         cols = st.columns(max(len(shown), 6))          # at least 6 slots, so a few images stay small
@@ -219,6 +241,10 @@ with st.expander(f"Low-confidence characters ({len(unsure)})", expanded=bool(uns
         st.write("Every character was read with high confidence.")
     explain("'Field as read' shows the whole field with the doubtful character in [brackets]; "
             "'#2 from the left' means the second box of that field. "
+            + ("'Actually written' comes from this test log's answer key, so you can see which doubtful "
+               "characters were really misread. (A real log has no answer key, so this column only appears for test logs.) "
+               if truth else "")
+            + 
             f"Confidence is the model's own probability for the character it chose. Below {CONF_MIN:.0%} "
             "the row (or, for header boxes, the whole log) goes to a clerk. On our tests most misreads had low "
             "confidence, but some correct characters do too: this threshold trades clerk time against safety.")
@@ -234,8 +260,10 @@ with st.expander("Look inside one field: cell crop → normalized 28×28 → rea
     for i, col in enumerate(cols):
         conf = f["confidence"][i]
         col.image(crops[i], caption=f"box {i + 1}", use_container_width=True)
+        t = truth_text(field)
+        written = f", written: {t[i]}" if t is not None and i < len(t) else ""
         col.image(to_display(norm[i]),
-                  caption=f"read: {f['text'][i]}" + (f" ({conf:.0%})" if conf is not None else ""),
+                  caption=f"read: {f['text'][i]}" + (f" ({conf:.0%})" if conf is not None else "") + written,
                   use_container_width=True)
     explain("Top row: the box as photographed, with a margin (bits of neighbouring boxes can be visible). "
             "Bottom row: what the model actually sees – only this box's ink, white on black, scaled so the "
