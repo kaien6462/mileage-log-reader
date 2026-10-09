@@ -1,8 +1,9 @@
 """
 train_classifiers.py -- SCRUM-14: train a DIGIT model (0-9) and a LETTER model (A-Z).
 
-Run with your file:    python train_classifiers.py --emnist emnist36.npz
-Or auto-download:      python train_classifiers.py
+Run (from the repo folder):  python src/train_classifiers.py --emnist data/emnist36.npz
+Or auto-download:            python src/train_classifiers.py
+Saves models/digit_model.pt and models/letter_model.pt.
 Needs: pip install torch torchvision numpy matplotlib
 
 emnist36.npz holds x_train/y_train, x_val/y_val, x_test/y_test. Labels: 0-9 digits,
@@ -11,6 +12,7 @@ transpose is applied. The auto-download (torchvision) images ARE sideways, so th
 are transposed.
 """
 import argparse
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -120,7 +122,8 @@ def train(name, train_xy, val_xy, test_xy, n_classes, epochs=6, lr=1e-3, seed=0)
         print(f"[{name}] epoch {ep + 1}/{epochs}  val acc = {accuracy(model, xval, yval, dev):.4f}")
 
     print(f"[{name}] TEST accuracy = {accuracy(model, *test_xy, dev):.4f}")
-    torch.save(model.state_dict(), f"{name}_model.pt")
+    os.makedirs("models", exist_ok=True)
+    torch.save(model.state_dict(), os.path.join("models", f"{name}_model.pt"))
     return model
 
 

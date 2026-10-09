@@ -1,4 +1,7 @@
 """
+FIRST VERSION, kept for reference: the pipeline now uses read_form.normalize_cell, which centres
+the bounding box like EMNIST (centre-of-mass centring here cost about 25 points on 7 and 9).
+
 normalize.py - Turn one cell crop from a Form ML-7 photo into an EMNIST-style
 28x28 image, so the classifier sees the same kind of input at inference as in
 training.

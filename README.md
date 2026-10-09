@@ -13,9 +13,9 @@ EMNIST-trained models, checks the business rules, and decides **per row** whethe
 
 | Team member | Role |
 |---|---|
-| Kaien Huang | Scrum Lead · data workflow, integration, demo |
-| Tenaj Lloyd | Product Lead · models, form reader, cost evaluation |
-| Susan Rollins | QA · testing, evaluation, results summary |
+| Tenaj Lloyd | Product Lead · Engineer (models, form reader, cost evaluation) |
+| Kaien Huang | Scrum Lead · Data Workflow (data pipeline, validation rules, integration, demo) |
+| Susan Rollins | QA (test cases, evaluation, results summary) |
 
 ---
 
@@ -106,6 +106,13 @@ by the team separately (`handwritten_forms.zip`); unzip into `data/`. They were 
 made-up data, printed on letter paper and photographed with a phone. iPhone HEIC photos must be converted
 first: `sips -s format jpeg photo.heic --out data/handwritten/hw_07.jpg`.
 
+### Retrain the models (optional)
+
+```bash
+python src/train_classifiers.py --emnist data/emnist36.npz     # → models/digit_model.pt, models/letter_model.pt
+python src/evaluate_classifiers.py --emnist data/emnist36.npz  # → results/results_classifiers.txt
+```
+
 ---
 
 ## Tests and evaluation
@@ -114,6 +121,7 @@ first: `sips -s format jpeg photo.heic --out data/handwritten/hw_07.jpg`.
 |---|---|---|
 | `python tests/test_validate.py` | every business rule on hand-made cases + all clean test logs read perfectly | prints PASS / FAIL |
 | `python tests/check_pipeline.py --out results/results_pipeline.txt` | end to end (read → validate) on the official test set: segmentation, field accuracy, auto-post rate, wrong rows posted | `results/results_pipeline.txt` |
+| `python src/evaluate_classifiers.py --emnist data/emnist36.npz` | digit and letter CNN accuracy on the EMNIST test split, per class and most common mix-ups | `results/results_classifiers.txt` |
 | `python src/check_reader.py data/test_official` | recognition per condition: digits, letters, each field type, touching / overflow boxes | `results/results_official.txt` |
 | `python src/evaluate_policy.py data/test_official` | post-or-route policy at several confidence thresholds, with and without lookups, monthly cost | `results/results_policy.txt` |
 | `python tests/check_handwritten.py --out results/results_handwritten.txt` | the 6 real handwritten forms against their answer keys | `results/results_handwritten.txt` |

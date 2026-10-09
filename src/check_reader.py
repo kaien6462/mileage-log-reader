@@ -7,7 +7,7 @@ The CONDITION is the name of the folder the log is in (clean / medium / phone).
 (Older flat folders with names like phone_03.jpg still work: condition = text before the first "_".)
 
 Run:
-  python check_reader.py data/test_official --digit-model digit_model.pt --letter-model letter_model.pt
+  python src/check_reader.py data/test_official        (models from models/, saves results/results_official.txt)
 
 Reports, per condition, as SEPARATE numbers (the assignment asks for this):
   * cell-extraction rate : boxes that should hold a character and were found non-empty
