@@ -11,8 +11,10 @@ Pipeline (each stage is one function, so you can show them in the demo):
   5. assemble        join the characters of each box group into a field
 
 Run:
-  python read_form.py photo.jpg --digit-model digit_model.pt --letter-model letter_model.pt
-  python read_form.py photo.jpg ... --debug debug_out      (also saves stage pictures)
+  python src/read_form.py photo.jpg                       (models from models/)
+  python src/read_form.py photo.jpg --debug debug_out     (also saves stage pictures)
+The demo and the tests use src/read_log.py, which calls these stages and adds printed-form
+alignment and portrait-photo rotation.
 
 Scope (say this in the approach document):
   * the whole page is visible, roughly upright (a few degrees of tilt, perspective is fine)

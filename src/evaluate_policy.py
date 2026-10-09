@@ -5,13 +5,13 @@ Reads every log with read_form.py (ONE pass), then applies the post-or-route rul
 confidence thresholds and reports, separately:
   * RAW model error      : rows with any character misread, before any rule is applied
   * ERROR AFTER RULES    : rows that were auto-posted AND still wrong (the dangerous ones)
-  * AUTO-POST RATE       : share of logs posted with no clerk
+  * AUTO-POST RATE       : share of logs (and of rows) posted with no clerk
   * COST per 10,000 logs : clerk keying ($3.40 per routed log) + priced misreads on auto-posted logs
 
 Uses the TEAM rules in validate.py (SCRUM-16, Kaien) when it is in the same folder.
 
-Run (from the folder that has read_form.py, train_classifiers.py and the .pt models):
-  python evaluate_policy.py data\\test_official --out results_policy.txt
+Run (from the repo folder; models from models/):
+  python src/evaluate_policy.py data/test_official      (saves results/results_policy.txt)
 
 Rules (Form ML-7 spec, same list as validate.py's docstring):
   1. every box read (no '?')

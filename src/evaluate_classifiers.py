@@ -1,16 +1,17 @@
 """
 evaluate_classifiers.py -- SCRUM-14 error analysis.
 
-Run (same folder as train_classifiers.py, digit_model.pt, letter_model.pt, emnist36.npz):
-    python evaluate_classifiers.py --emnist emnist36.npz
+Run (from the repo folder; models in models/):
+    python src/evaluate_classifiers.py --emnist data/emnist36.npz
 
-Prints and saves (results_classifiers.txt):
+Prints and saves (results/results_classifiers.txt):
   - overall TEST accuracy for the digit and letter models
   - accuracy for EACH digit / letter, worst first
   - the most common mix-ups (true -> predicted)
-Also saves confusion_digit.csv and confusion_letter.csv.
+Also saves results/confusion_digit.csv and results/confusion_letter.csv.
 """
 import argparse
+import os
 import numpy as np
 import torch
 
@@ -57,7 +58,7 @@ def report(name, names, cm, out):
             break
         out.append(f"   {names[t]} -> {names[p]} : {off[t, p]}")
     out.append("")
-    np.savetxt(f"confusion_{name}.csv", cm, fmt="%d", delimiter=",",
+    np.savetxt(os.path.join("results", f"confusion_{name}.csv"), cm, fmt="%d", delimiter=",",
                header="rows=true, cols=predicted: " + ",".join(names), comments="")
 
 
@@ -66,11 +67,12 @@ if __name__ == "__main__":
     ap.add_argument("--emnist", required=True)
     args = ap.parse_args()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
+    os.makedirs("results", exist_ok=True)
 
     data = load(args.emnist)
     out = []
-    for name, names, make, path in [("digit", DIGITS, make_digit_set, "digit_model.pt"),
-                                    ("letter", LETTERS, make_letter_set, "letter_model.pt")]:
+    for name, names, make, path in [("digit", DIGITS, make_digit_set, "models/digit_model.pt"),
+                                    ("letter", LETTERS, make_letter_set, "models/letter_model.pt")]:
         x, y = make(*data["test"])
         model = SmallCNN(len(names)).to(dev)
         model.load_state_dict(torch.load(path, map_location=dev))
@@ -79,5 +81,5 @@ if __name__ == "__main__":
 
     text = "\n".join(out)
     print(text)
-    open("results_classifiers.txt", "w").write(text)
-    print("Saved results_classifiers.txt, confusion_digit.csv, confusion_letter.csv")
+    open(os.path.join("results", "results_classifiers.txt"), "w").write(text)
+    print("Saved results/results_classifiers.txt, results/confusion_digit.csv, results/confusion_letter.csv")
